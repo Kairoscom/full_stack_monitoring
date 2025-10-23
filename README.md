@@ -178,7 +178,7 @@ ls （查看目录）-l （长格式）-a（显示所有文件）
 
 Grafana：监控可视化面板http://服务器IP:3000
 
-用户admin 密码 已重置：Grafana123456
+
 
 Prometheus ：监控数据的 “存储中心http://服务器IP:9090
 
@@ -215,7 +215,9 @@ git push
 
 深度掌控监控系统
 
+## 本地更新文件操作
 
+scp "D:\@collage_doucuments\personal_project\cloud_monitor_project\REMADE.md" kairos@ip:/home/kairos/full_stack_monitoring/
 
 
 
