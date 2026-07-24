@@ -1,0 +1,21 @@
+# HELP docker_container_restart_count Number of times the container has been restarted.
+# TYPE docker_container_restart_count gauge
+# HELP docker_container_up Whether the container is up (1) or not (0).
+# TYPE docker_container_up gauge
+# HELP docker_container_exit_code Last exit code of the container.
+# TYPE docker_container_exit_code gauge
+docker_container_restart_count{container="site_check"} 0
+docker_container_up{container="site_check"} 1
+docker_container_exit_code{container="site_check"} 0
+docker_container_restart_count{container="alertmanager"} 0
+docker_container_up{container="alertmanager"} 1
+docker_container_exit_code{container="alertmanager"} 0
+docker_container_restart_count{container="grafana"} 0
+docker_container_up{container="grafana"} 1
+docker_container_exit_code{container="grafana"} 0
+docker_container_restart_count{container="prometheus"} 0
+docker_container_up{container="prometheus"} 1
+docker_container_exit_code{container="prometheus"} 0
+docker_container_restart_count{container="node-exporter"} 0
+docker_container_up{container="node-exporter"} 1
+docker_container_exit_code{container="node-exporter"} 0

@@ -1,0 +1,120 @@
+# ============================================
+# 主机层告警规则
+# 作者: wangx
+# 作用: CPU/内存/磁盘/网络/进程 异常检测
+# 触发频率: 每 15 秒评估一次，状态持续 2 分钟才告警
+# ============================================
+
+groups:
+  - name: host_alerts
+    interval: 30s
+    rules:
+
+      # ===== CPU =====
+      - alert: HighCpuUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 2m
+        labels:
+          severity: warning
+          category: cpu
+        annotations:
+          summary: "CPU 使用率过高 ({{ $value | printf \"%.1f\" }}%)"
+          description: "{{ $labels.instance }} CPU 5 分钟平均使用率 {{ $value | printf \"%.1f\" }}%, 持续 2 分钟超过 80%"
+          runbook_url: "https://github.com/kairoscom/remote-server-monitoring/blob/main/docs/runbook.md#cpu-高"
+
+      - alert: CriticalCpuUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 1m
+        labels:
+          severity: critical
+          category: cpu
+        annotations:
+          summary: "CPU 严重过载 ({{ $value | printf \"%.1f\" }}%)"
+          description: "{{ $labels.instance }} CPU 5 分钟平均使用率 {{ $value | printf \"%.1f\" }}%, 持续 1 分钟超过 95%"
+
+      # ===== 内存 =====
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 2m
+        labels:
+          severity: warning
+          category: memory
+        annotations:
+          summary: "内存使用率过高 ({{ $value | printf \"%.1f\" }}%)"
+          description: "{{ $labels.instance }} 内存使用率 {{ $value | printf \"%.1f\" }}%, 持续 2 分钟超过 85%"
+          runbook_url: "https://github.com/kairoscom/remote-server-monitoring/blob/main/docs/runbook.md#内存-高"
+
+      # ===== 磁盘空间 =====
+      - alert: DiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes)) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: disk
+        annotations:
+          summary: "磁盘空间不足 ({{ $labels.mountpoint }})"
+          description: "{{ $labels.instance }} 挂载点 {{ $labels.mountpoint }} 使用率 {{ $value | printf \"%.1f\" }}%, 剩余不足 20%"
+
+      - alert: DiskWillFillIn4Hours
+        expr: predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}[6h], 4*3600) < 0
+        for: 10m
+        labels:
+          severity: warning
+          category: disk
+        annotations:
+          summary: "磁盘 4 小时内将写满"
+          description: "{{ $labels.instance }} {{ $labels.mountpoint }} 按当前写入速度,4 小时内将写满"
+
+      - alert: DiskSpaceCritical
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes)) * 100 > 90
+        for: 2m
+        labels:
+          severity: critical
+          category: disk
+        annotations:
+          summary: "磁盘空间严重不足"
+          description: "{{ $labels.instance }} {{ $labels.mountpoint }} 使用率超过 90%, 服务可能异常"
+
+      # ===== 网络 =====
+      - alert: NetworkInterfaceDown
+        expr: node_network_up{device=~"eth[0-9]+|en[ops][0-9]+[a-z0-9]*"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "网卡 {{ $labels.device }} 状态 down"
+          description: "{{ $labels.instance }} 网卡 {{ $labels.device }} 已 down 超过 2 分钟"
+
+      # ===== inode =====
+      - alert: HostOutOfInodes
+        expr: (1 - (node_filesystem_files_free{fstype!~"tmpfs|overlay"} / node_filesystem_files)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: disk
+        annotations:
+          summary: "inode 使用率过高"
+          description: "{{ $labels.instance }} {{ $labels.mountpoint }} inode 使用率 {{ $value | printf \"%.1f\" }}%"
+
+      # ===== 节点存活 =====
+      - alert: InstanceDown
+        expr: up{job="node-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: service
+        annotations:
+          summary: "node-exporter 失联"
+          description: "{{ $labels.instance }} node-exporter 已 down 超过 1 分钟,主机层指标采集中断"
+
+      # ===== 负载 =====
+      - alert: HighLoadAverage
+        expr: node_load15 > (count by(instance) (node_cpu_seconds_total{mode="idle"}) * 1.5)
+        for: 5m
+        labels:
+          severity: warning
+          category: load
+        annotations:
+          summary: "系统负载过高"
+          description: "{{ $labels.instance }} 15 分钟平均负载 {{ $value | printf \"%.2f\" }} 超过 CPU 核心数 1.5 倍"

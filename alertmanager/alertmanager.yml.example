@@ -1,0 +1,22 @@
+global:
+  smtp_smarthost: "smtp.qq.com:465"
+  smtp_from: "2647056571@qq.com"
+  smtp_auth_username: "2647056571@qq.com"
+  smtp_auth_password: "YOUR_QQ_MAIL_AUTH_CODE"
+  smtp_require_tls: false
+  smtp_hello: "qq.com"
+
+route:
+  group_by: ["alertname"]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 4h
+  receiver: "email-notification"
+
+receivers:
+  - name: "email-notification"
+    email_configs:
+      - to: "2647056571@qq.com"
+        send_resolved: true
+        # 关键：在 tls_config 里允许 IP SAN 验证失败时仍信任（不推荐生产，但开发场景 OK）
+        # 或者更稳的：在 smtp_smarthost 写域名让 DNS 解析

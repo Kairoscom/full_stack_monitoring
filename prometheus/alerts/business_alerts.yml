@@ -1,0 +1,66 @@
+# ============================================
+# 业务层告警规则
+# 作者: wangx
+# 作用: 站点可用性监控告警（依赖自研 site_check exporter）
+# 数据源: site_up / site_response_time_seconds / site_ssl_expiry_days
+# ============================================
+
+groups:
+  - name: business_alerts
+    interval: 30s
+    rules:
+
+      - alert: SiteDown
+        expr: site_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: business
+          service: 'site-check'
+        annotations:
+          summary: "站点 {{ $labels.url }} 不可用"
+          description: "{{ $labels.url }} 已连续 2 分钟探测失败"
+
+      - alert: SiteSlow
+        expr: site_response_time_seconds > 3
+        for: 5m
+        labels:
+          severity: warning
+          category: business
+          service: 'site-check'
+        annotations:
+          summary: "站点 {{ $labels.url }} 响应慢"
+          description: "{{ $labels.url }} 响应时间 {{ $value | printf \"%.2f\" }}s 超过 3 秒,持续 5 分钟"
+
+      - alert: SslCertExpiringSoon
+        expr: site_ssl_expiry_days < 14
+        for: 1h
+        labels:
+          severity: warning
+          category: business
+          service: 'site-check'
+        annotations:
+          summary: "SSL 证书即将过期 ({{ $labels.url }})"
+          description: "{{ $labels.url }} 的 SSL 证书还有 {{ $value | printf \"%.0f\" }} 天过期,请及时续期"
+
+      - alert: SslCertExpiringCritical
+        expr: site_ssl_expiry_days < 3
+        for: 10m
+        labels:
+          severity: critical
+          category: business
+          service: 'site-check'
+        annotations:
+          summary: "SSL 证书即将过期 ({{ $labels.url }})"
+          description: "{{ $labels.url }} 的 SSL 证书只剩 {{ $value | printf \"%.0f\" }} 天!"
+
+      - alert: SiteHttpError
+        expr: site_status_code != 200 and site_status_code > 0
+        for: 3m
+        labels:
+          severity: warning
+          category: business
+          service: 'site-check'
+        annotations:
+          summary: "站点返回错误码 ({{ $labels.url }})"
+          description: "{{ $labels.url }} 返回 HTTP {{ $value }}, 持续 3 分钟"

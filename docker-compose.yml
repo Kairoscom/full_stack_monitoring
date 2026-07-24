@@ -1,0 +1,181 @@
+# ============================================
+# 远程服务器监控栈
+# 作者: wangx
+# 用途: Prometheus + Alertmanager + Grafana 全家桶
+# 服务器: 1.7G 内存，资源严格控制
+# 设计原则：
+#   1. 固定镜像版本（可复现）
+#   2. 资源限制（mem_limit / cpus）
+#   3. 数据持久化（volumes）
+#   4. 健康检查（自愈能力）
+#   5. 启动顺序（depends_on condition）
+#   6. 配置分离（.env + 挂载）
+# 备注：所有 image 走 Aliyun 镜像源，绕过 registry-1.docker.io
+# ============================================
+
+version: "3.8"
+
+networks:
+  monitor:
+    driver: bridge
+    name: monitor-net
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:
+
+services:
+  # ============================================
+  # 1. Prometheus：时序数据库 + 告警引擎
+  # ============================================
+  prometheus:
+    image: docker.m.daocloud.io/prom/prometheus:v2.54.1
+    container_name: prometheus
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: "0.5"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    networks:
+      - monitor
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ============================================
+  # 2. Alertmanager：告警路由 + 邮件发送
+  # ============================================
+  alertmanager:
+    image: docker.m.daocloud.io/prom/alertmanager:v0.28.1
+    container_name: alertmanager
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: "0.2"
+    ports:
+      - "9093:9093"
+    dns:
+      - 223.5.5.5
+      - 8.8.8.8
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+      - "--log.level=debug"
+    networks:
+      - monitor
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ============================================
+  # 3. Grafana：可视化面板
+  # ============================================
+  grafana:
+    image: docker.m.daocloud.io/grafana/grafana:11.2.0
+    container_name: grafana
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: "0.3"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    networks:
+      - monitor
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================
+  # 4. node-exporter：主机层指标
+  # ============================================
+  node-exporter:
+    image: docker.m.daocloud.io/prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    mem_limit: 32m
+    cpus: "0.2"
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./node-exporter-textfile:/var/lib/node-exporter/textfile:rw
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker/.+)($$|/)"
+      - "--collector.textfile.directory=/var/lib/node-exporter/textfile"
+    networks:
+      - monitor
+    pid: host
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ============================================
+  # 5. site_check：自研业务 exporter（差异化亮点）
+  # ============================================
+  site_check:
+    build: ./exporters/site_check
+    container_name: site_check
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: "0.2"
+    ports:
+      - "9877:9877"
+    volumes:
+      - ./exporters/site_check/targets.json:/app/targets.json:ro
+    networks:
+      - monitor
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; r=urllib.request.urlopen('http://localhost:9877/metrics',timeout=3); sys.exit(0 if r.status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
